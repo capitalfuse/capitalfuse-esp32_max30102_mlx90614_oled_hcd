@@ -77,16 +77,26 @@ WiFiMulti wifiMulti;
 
 #define ESP_getChipId()   ((uint32_t)ESP.getEfuseMac())
 
-#define LED_ON            HIGH
-#define LED_OFF           LOW
+#include <Adafruit_NeoPixel.h>
+int pin = 12; // Which pin on the Arduino is connected to the NeoPixels?
+int numPixels = 1; // How many NeoPixels are attached to the Arduino?
+int pixelFormat = NEO_GRB + NEO_KHZ800; // NeoPixel color format & data rate.
+#define lED_LEVEL 50
+bool toggleFlag = false;
+// Rather than declaring the whole NeoPixel object here, we just create
+// a pointer for one, which we'll then allocate later...
+Adafruit_NeoPixel *pixels;
+
+//#define LED_ON            HIGH
+//#define LED_OFF           LOW
 
 #include "Adafruit_MQTT.h"                //https://github.com/adafruit/Adafruit_MQTT_Library
 #include "Adafruit_MQTT_Client.h"         //https://github.com/adafruit/Adafruit_MQTT_Library
 
 //See file .../hardware/espressif/esp32/variants/(esp32|doitESP32devkitV1)/pins_arduino.h
 const int BUTTON_PIN  = 15;
-const int BLUE_LED    = 12;
-const int GREEN_LED   = 13;
+//const int BLUE_LED    = 12;
+//const int GREEN_LED   = 13;
 
 uint32_t timer = millis();
 
@@ -297,7 +307,8 @@ WiFi_STA_IPConfig WM_STA_IPconfig;
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 50000UL, 50000UL);
+bool oledToggleFlag = false;
 
 MAX30105 particleSensor;
 
@@ -487,13 +498,32 @@ uint8_t connectMultiWiFi()
 void toggleLED()
 {
   //toggle state
-  digitalWrite(BLUE_LED, !digitalRead(BLUE_LED));
+  //digitalWrite(BLUE_LED, !digitalRead(BLUE_LED));
+  toggleFlag = !toggleFlag;
+  pixels->clear(); // Set all pixel colors to 'off'
+  if (toggleFlag == true) {
+    pixels->setPixelColor(0, pixels->Color(0, 0, lED_LEVEL));
+  }
+  pixels->show();
+}
+
+//**************************************************************************
+//**************************************************************************
+void check_WiFi()
+{
+  if ( (WiFi.status() != WL_CONNECTED) )
+  {
+    Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
+    connectMultiWiFi();
+  }
 }
 
 //**************************************************************************
 //**************************************************************************
 void data_publish()
 {
+  check_WiFi(); // check wifi status and reconnect
+
   StaticJsonDocument<SENSORDATA_JSON_SIZE1> json1;
   json1["hr"] = beatAvg; //Heart Rate Average
   json1["spo2"] = spo2; // SpO2
@@ -513,17 +543,6 @@ void data_publish()
   {
     //Serial.println(F("Value to pub_sensor_values feed sucessfully sent!"));
     Serial.print(F("Publish Error "));
-  }
-}
-
-//**************************************************************************
-//**************************************************************************
-void check_WiFi()
-{
-  if ( (WiFi.status() != WL_CONNECTED) )
-  {
-    Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
-    connectMultiWiFi();
   }
 }
 
@@ -719,7 +738,10 @@ void createNewInstances()
 void wifi_manager()
 {
   Serial.println(F("\nConfig Portal requested."));
-  digitalWrite(GREEN_LED, LED_ON); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+  //digitalWrite(GREEN_LED, LED_ON); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
+  pixels->clear(); // Set all pixel colors to 'off'
+  pixels->setPixelColor(0, pixels->Color(0, lED_LEVEL, 0));
+  pixels->show();
 
   //Local intialization. Once its business is done, there is no need to keep it around
   ESP_WiFiManager ESP_wifiManager("ConfigOnSwitchFS-MQTT");
@@ -884,7 +906,9 @@ void wifi_manager()
   // Writing JSON config file to flash for next boot
   writeConfigFile();
 
-  digitalWrite(GREEN_LED, LED_OFF); // Turn LED off as we are not in configuration mode.
+  //digitalWrite(GREEN_LED, LED_OFF); // Turn LED off as we are not in configuration mode.
+  pixels->clear(); // Set all pixel colors to 'off'
+  pixels->show();
 
   deleteOldInstances();
 
@@ -1110,6 +1134,12 @@ void MQTT_connect()
   Serial.println(F("WiFi MQTT connection successful!"));
 }
 
+// ************************************************************************************************************
+// Define reference handlers to these two tasks. Use these TaskHandle_t type variables to change task priority.
+TaskHandle_t TaskHandle_1; // handler for Task1
+TaskHandle_t TaskHandle_2; // handler for Task2
+TaskHandle_t TaskHandle_3; // handler for Task2
+
 // *********************************** Setup function ********************************************************************************
 // ***********************************************************************************************************************************
 void setup()
@@ -1129,8 +1159,12 @@ void setup()
   btn.attachLongPressStop(handleLongPressStop);
 
   // Initialize the LED digital pin as an output.
-  pinMode(BLUE_LED, OUTPUT);
-  pinMode(GREEN_LED, OUTPUT);
+  // pinMode(BLUE_LED, OUTPUT);
+  // pinMode(GREEN_LED, OUTPUT);
+
+  // create a new NeoPixel object dynamically with these values:
+  pixels = new Adafruit_NeoPixel(numPixels, pin, pixelFormat);
+  pixels->begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
 
   // Mount the filesystem
   if (FORMAT_FILESYSTEM)
@@ -1203,14 +1237,16 @@ void setup()
   
     wifi_manager();
   }
-  else if ( WiFi.status() != WL_CONNECTED ) 
+/*   else if ( WiFi.status() != WL_CONNECTED ) 
   {
     Serial.println(F("ConnectMultiWiFi in setup"));
    
     connectMultiWiFi();
-  }
+  } */
 
-  digitalWrite(BLUE_LED, LED_OFF); // Turn led off as we are not in configuration mode.  
+  //digitalWrite(BLUE_LED, LED_OFF); // Turn led off as we are not in configuration mode.
+  pixels->clear();
+  pixels->show(); 
 
 // ************************MAX30102, MLX90614, OLED********************************
 // ********************************************************************************  
@@ -1234,6 +1270,7 @@ void setup()
   delay(1000);
   display.clearDisplay();
   display.setTextColor(WHITE);
+  display.setRotation(2);
 
   // MAX30102
   particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
@@ -1255,7 +1292,7 @@ void setup()
     ,  3000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2 // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL); 
+    ,  &TaskHandle_1); 
   
   xTaskCreate(
     spo2Max30102
@@ -1263,7 +1300,7 @@ void setup()
     ,  4000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL); 
+    ,  &TaskHandle_2); 
 
   xTaskCreate(
     tempMlx90614
@@ -1271,69 +1308,64 @@ void setup()
     ,  4000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  0  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL); 
+    ,  &TaskHandle_3); 
 
 }
 
 // ********************************************* Loop function ******************************************************************
 // ******************************************************************************************************************************
 void loop()
-{
-  // checking button state all the time
-  //btn.tick();
-
-  // this is just for checking if we are connected to WiFi
-  //check_status();
-}
+{ }
 
 //************************OLED Display Functions*********************************
 //*****************************************************************************
 
 void displayNotice() {
-  display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(0,0);
-  display.print(F("START >>>"));
-  display.setTextSize(1);
-  display.setCursor(0,30);
-  display.print(F("Put Your Finger on"));
-  delay(10);
-  yield();
+  oledToggleFlag = !oledToggleFlag;
+  if (oledToggleFlag == false){
+    display.clearDisplay();
+    delay(2000);
+  } else {
+    display.setTextSize(1);
+    display.setCursor(8,16);
+    display.print(F("Put Your Finger ON"));
+    display.setTextSize(2);
+    display.setCursor(8,48);
+    display.print(F("START ^^^"));
+    delay(500);
+  }
+  //yield();
   display.display();
-  delay(2000);
-  
-  display.clearDisplay();
-  
-  delay(10);
-  yield();
-  display.display();
-  delay(500);
 }
 
 void displayFinal(finalData *p) {
   display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(0,0); 
-  display.print(p->value1);
-  display.print(" ");
-  display.print(p->base_unit1);
-  
+  delay(10);
+  //yield();
+  display.display();
+
   display.setTextSize(1);
-  display.setCursor(0,18);
-  display.print(p->title1);
+  display.setCursor(0,4);
+  display.print(p->title2);
   
   display.setTextSize(2);
-  display.setCursor(0,34); 
+  display.setCursor(8,16); 
   display.print(p->value2);
   display.print(" ");
   display.print(p->base_unit2);
   
   display.setTextSize(1);
-  display.setCursor(0,52);
-  display.print(p->title2);
+  display.setCursor(0,36);
+  display.print(p->title1);
+
+  display.setTextSize(2);
+  display.setCursor(8,48); 
+  display.print(p->value1);
+  display.print(" ");
+  display.print(p->base_unit1);
   
   delay(10);
-  yield();
+  //yield();
   display.display();
   delay(3000);
 
@@ -1345,35 +1377,42 @@ void displayFinal(finalData *p) {
 
 void displayError() {
   display.clearDisplay();
+  delay(10);
+  //yield();
+  display.display();
+
   display.setTextSize(1);
-  display.setCursor(20,30);
+  display.setCursor(20,24);
   display.print(F("Read Error..."));
   display.setCursor(20,40);
   display.print(F("Try Again!"));
   
   delay(10);
-  yield();
+  //yield();
   display.display();
-  delay(3000);
+  delay(2000);
   
   xSemaphoreGive(xMutex); // release mutex
-  tempMlx90614(NULL);
+  //tempMlx90614(NULL);
 }
 
 void displayChecking() {
-  delay(500);
   display.clearDisplay();
-  display.setTextSize(2);
-  display.setCursor(0,0);
-  display.print(F("Checking.."));
+  delay(10);
+  //yield();
+  display.display();
+
   display.setTextSize(1);
-  display.setCursor(0,30);
+  display.setCursor(8,16);
   display.print(F("Keep Your Finger"));
-  display.setCursor(0,40);
+  display.setCursor(8,30);
   display.print(F("putting on"));
+  display.setTextSize(2);
+  display.setCursor(8,48);
+  display.print(F("Checking.."));
 
   delay(10);
-  yield();
+  //yield();
   display.display();
 }
 
@@ -1405,7 +1444,7 @@ void preCheck(void *pvParameters)
     // checking button state all the time
     btn.tick();
     // this is just for checking if we are connected to WiFi
-    check_status();
+    //check_status();
 
     displayNotice();
 
@@ -1433,7 +1472,7 @@ void preCheck(void *pvParameters)
     {
       Serial.println(" Something is there!");
       particleSensor.setPulseAmplitudeRed(ledBrightness);
-      
+
       xSemaphoreGive(xMutex); // release mutex
       vTaskDelay(pdMS_TO_TICKS(100));
       vTaskDelete(NULL);
@@ -1449,9 +1488,13 @@ void hrMax30102(void *pvParameters)
   (void) pvParameters;
 
   xSemaphoreTake(xMutex, portMAX_DELAY);
+
+  checkFlag = false;
+  //digitalWrite(BLUE_LED, 1);
+  pixels->clear(); // Set all pixel colors to 'off'
+  pixels->setPixelColor(0, pixels->Color(0, 0, lED_LEVEL));
+  pixels->show();
   
-  checkFlag=false;
-  digitalWrite(BLUE_LED, 1);
   displayChecking();
   
   particleSensor.setup(); //Configure sensor with default settings
@@ -1460,7 +1503,13 @@ void hrMax30102(void *pvParameters)
   
   for(int i=0; i<1500; i++) {
     
-    digitalWrite(BLUE_LED, !digitalRead(BLUE_LED)); //Blink onboard LED with every data read
+    //digitalWrite(BLUE_LED, !digitalRead(BLUE_LED)); //Blink onboard LED with every data read
+    toggleFlag = !toggleFlag;
+    pixels->clear(); // Set all pixel colors to 'off'
+    if (toggleFlag == true) {
+      pixels->setPixelColor(0, pixels->Color(0, 0, lED_LEVEL));
+    }
+    pixels->show();
 
     redValue = particleSensor.getRed();
   
@@ -1495,7 +1544,7 @@ void hrMax30102(void *pvParameters)
     if (redValue < 10000) {
       chkCount++;
       Serial.print(" No finger?");
-      if (chkCount > 30) {
+      if (chkCount > 100) {
         break;
       }
     }  
@@ -1509,7 +1558,9 @@ void hrMax30102(void *pvParameters)
     }
   }
 
-  digitalWrite(BLUE_LED, 0);
+  //digitalWrite(BLUE_LED, 0);
+  pixels->clear();
+  pixels->show();
   
   if(checkFlag==true) {
     finalData *p = (finalData *)malloc(sizeof(finalData));
@@ -1526,6 +1577,7 @@ void hrMax30102(void *pvParameters)
     displayFinal(p);
     
   }else {
+    vTaskSuspend(TaskHandle_2); //Suspend spo2Max30102 Task
     beatAvg = 0;
     spo2 = 0;
     displayError();
@@ -1544,7 +1596,11 @@ void spo2Max30102(void *pvParameters)
   xSemaphoreTake(xMutex, portMAX_DELAY);
 
   checkFlag=false;
-  digitalWrite(GREEN_LED, 1);
+  //digitalWrite(GREEN_LED, 1);
+  pixels->clear(); // Set all pixel colors to 'off'
+  pixels->setPixelColor(0, pixels->Color(0, lED_LEVEL, 0));
+  pixels->show();
+
   displayChecking();
 
   // max30102
@@ -1587,7 +1643,13 @@ void spo2Max30102(void *pvParameters)
       while (particleSensor.available() == false) //do we have new data?
         particleSensor.check(); //Check the sensor for new data
 
-      digitalWrite(GREEN_LED, !digitalRead(GREEN_LED)); //Blink onboard LED with every data read
+      //digitalWrite(GREEN_LED, !digitalRead(GREEN_LED)); //Blink onboard LED with every data read
+      toggleFlag = !toggleFlag;
+      pixels->clear(); // Set all pixel colors to 'off'
+      if (toggleFlag == true) {
+        pixels->setPixelColor(0, pixels->Color(0, lED_LEVEL, 0));
+      }
+      pixels->show();
 
       redBuffer[i] = particleSensor.getRed();
       irBuffer[i] = particleSensor.getIR();
@@ -1631,7 +1693,9 @@ void spo2Max30102(void *pvParameters)
 
   }
 
-  digitalWrite(GREEN_LED, 0);
+  //digitalWrite(GREEN_LED, 0);
+  pixels->clear();
+  pixels->show();
   
   if(checkFlag==true) {
     finalData *p = (finalData *)malloc(sizeof(finalData));
@@ -1679,7 +1743,7 @@ void tempMlx90614(void *pvParameters)
   displayFinal(p);
 
   data_publish();
-  vTaskDelay(pdMS_TO_TICKS(100));
+  vTaskDelay(pdMS_TO_TICKS(200));
 
   ESP.restart();
 }
