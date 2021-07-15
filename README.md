@@ -29,7 +29,7 @@
 	+ mathertel/OneButton@0.0.0-alpha+sha.eb583d713a
 	+ khoih.prog/ESP_WifiManager@^1.7.2
 	+ adafruit/Adafruit SSD1306@^2.4.6
-  + adafruit/Adafruit NeoPixel@^1.8.2
+        + adafruit/Adafruit NeoPixel@^1.8.2
 
 
 ## Important!
@@ -108,7 +108,7 @@ https://ficus-forum.myvnc.com/t/topic/409/16
 
   ![esp32-wifi-ap-config-menu](images/wifi_manager_top.jpg)
 
-  ![esp32-wifi-ap-config](wifi_manager_config.jpg)
+  ![esp32-wifi-ap-config](images/wifi_manager_config.jpg)
 
   Push button for changing user ID (Double click for the user ID reset:1 ). After 60 seconds without any actions, it will change to deep sleep mode.
 
