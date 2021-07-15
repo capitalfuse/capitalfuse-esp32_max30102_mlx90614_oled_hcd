@@ -98,16 +98,24 @@ const int BUTTON_PIN  = 15;
 //const int BLUE_LED    = 12;
 //const int GREEN_LED   = 13;
 
-uint32_t timer = millis();
+#define CHECK_INTERVAL 60000L // 60 sec
+ulong currentTime;
+ulong lastTime = 0;
 
 const char* CONFIG_FILE = "/ConfigMQTT.json";
 
 // Indicates whether ESP has WiFi credentials saved from previous session
 bool initialConfig = false; //default false
 
+// include library to read and write from flash memory
+#include <EEPROM.h>
+// define the number of bytes you want to access
+#define EEPROM_SIZE 1
+
 // Json format size
 const size_t SENSORDATA_JSON_SIZE0 = JSON_OBJECT_SIZE(6)+150;
-const size_t SENSORDATA_JSON_SIZE1 = JSON_OBJECT_SIZE(3);
+const size_t SENSORDATA_JSON_SIZE1 = JSON_OBJECT_SIZE(6);
+uint8_t user_id = 1;
 
 // Default configuration values for MQTT
 // This actually works
@@ -307,7 +315,7 @@ WiFi_STA_IPConfig WM_STA_IPconfig;
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 50000UL, 50000UL);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET, 100000UL, 100000UL);
 bool oledToggleFlag = false;
 
 MAX30105 particleSensor;
@@ -326,7 +334,7 @@ void spo2Max30102(void *pvParameters);
 void tempMlx90614(void *pvParameters);
 
 // MAX30102 Check Presence variables
-bool checkFlag = 0; // Flag for finding error
+bool checkFlag = true; // Flag for finding error
 long unblockedValue; //Average IR at power up
 
 // MAX30102 Heart Rate variables
@@ -525,9 +533,10 @@ void data_publish()
   check_WiFi(); // check wifi status and reconnect
 
   StaticJsonDocument<SENSORDATA_JSON_SIZE1> json1;
-  json1["hr"] = beatAvg; //Heart Rate Average
-  json1["spo2"] = spo2; // SpO2
-  json1["temp"] = objectTemp; // Body Temperature
+  JsonObject userID = json1.createNestedObject("id" + String(user_id));
+  userID["hr"] = beatAvg; //Heart Rate Average
+  userID["spo2"] = spo2; // SpO2
+  userID["temp"] = objectTemp; // Body Temperature
   serializeJson(json1, Serial);
   serializeJson(json1, sensor_payload, sizeof(sensor_payload));
   //pub_sensor_values.publish(sensor_payload);
@@ -548,28 +557,14 @@ void data_publish()
 
 //**************************************************************************
 //**************************************************************************
-void check_status()
+void check_interval()
 {
-  static ulong LEDstatus_timeout    = 0;
-  static ulong checkwifi_timeout    = 0;
-  
-  ulong current_millis = millis();
+  lastTime = millis();
 
-#define LED_INTERVAL          2000L
-#define WIFICHECK_INTERVAL    10000L
-
-  // Check WiFi every WIFICHECK_INTERVAL (1) seconds.
-  if ((current_millis > checkwifi_timeout) || (checkwifi_timeout == 0))
+  // Check Sleep Mode Interval
+  if (lastTime - currentTime >= CHECK_INTERVAL )
   {
-    check_WiFi();
-    checkwifi_timeout = current_millis + WIFICHECK_INTERVAL;
-  }
-
-  if ((current_millis > LEDstatus_timeout) || (LEDstatus_timeout == 0))
-  {
-    // Toggle LED at LED_INTERVAL = 2s
-    toggleLED();
-    LEDstatus_timeout = current_millis + LED_INTERVAL;
+    esp_deep_sleep_start();
   }
 
 }
@@ -913,7 +908,9 @@ void wifi_manager()
   deleteOldInstances();
 
   MQTT_Pub_Topic = String(custom_MQTT_TOPIC);
-  createNewInstances();
+  //createNewInstances();
+  WiFi.mode(WIFI_OFF);
+  currentTime = millis(); // Reset start time for sleep mode
 }
 
 // this function is just to display newly saved data,
@@ -935,30 +932,6 @@ void newConfigData()
   Serial.print(F("custom_TOPIC: ")); 
   Serial.println(custom_MQTT_TOPIC);
   Serial.println();
-}
-
-//event handler functions for button
-//**************************************************************************
-//**************************************************************************
-static void handleClick() 
-{
-  Serial.println(F("Button clicked!"));
-  newConfigData();
-}
-
-//**************************************************************************
-//**************************************************************************
-static void handleDoubleClick() 
-{
-  Serial.println(F("Button double clicked!"));
-}
-
-//**************************************************************************
-//**************************************************************************
-static void handleLongPressStop() 
-{
-  Serial.println(F("Button pressed for long time and then released!"));
-  wifi_manager();
 }
 
 //**************************************************************************
@@ -1136,9 +1109,49 @@ void MQTT_connect()
 
 // ************************************************************************************************************
 // Define reference handlers to these two tasks. Use these TaskHandle_t type variables to change task priority.
+TaskHandle_t TaskHandle_0;
 TaskHandle_t TaskHandle_1; // handler for Task1
 TaskHandle_t TaskHandle_2; // handler for Task2
-TaskHandle_t TaskHandle_3; // handler for Task2
+TaskHandle_t TaskHandle_3; // handler for Task3
+
+//event handler functions for button
+//**************************************************************************
+//**************************************************************************
+static void handleClick() 
+{
+  Serial.println(F("Button clicked!"));
+  currentTime = millis(); // Reset start time for sleep mode
+  user_id = user_id + 1;
+  if (user_id > 10) {
+    user_id = 1;
+  }
+  EEPROM.write(0, user_id);
+  EEPROM.commit();
+}
+
+//**************************************************************************
+//**************************************************************************
+static void handleDoubleClick() 
+{
+  currentTime = millis(); // Reset start time for sleep mode
+  Serial.println(F("Button double clicked!"));
+  //newConfigData();
+  // Reset User ID
+  user_id = 1;
+  EEPROM.write(0, user_id);
+  EEPROM.commit();
+}
+
+//**************************************************************************
+//**************************************************************************
+static void handleLongPressStop() 
+{
+  Serial.println(F("Button pressed for long time and then released!"));
+  vTaskDelay(10);
+  vTaskSuspend(TaskHandle_0);
+  wifi_manager();
+  vTaskResume(TaskHandle_0);
+}
 
 // *********************************** Setup function ********************************************************************************
 // ***********************************************************************************************************************************
@@ -1147,6 +1160,18 @@ void setup()
   // Put your setup code here, to run once
   Serial.begin(115200);
   while (!Serial);
+
+  // initialize EEPROM with predefined size
+  EEPROM.begin(EEPROM_SIZE);
+  // read the last LED state from flash memory
+  if (EEPROM.read(0) > 10) {
+    EEPROM.write(0, 1); // set default user_id:1
+    EEPROM.commit();
+  }
+  user_id = EEPROM.read(0);
+  
+  // Wake up from Deep Sleep Mode : ext0 uses RTC_IO to wakeup
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_15,0); //1 = High, 0 = Low, GPIO15
 
   delay(200);
 
@@ -1278,44 +1303,54 @@ void setup()
   mlx.begin();
 
   // set up 4 tasks to run independently.
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     preCheck
     ,  "preCheck"   // A name just for humans
     ,  4000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  3 // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL);
+    ,  &TaskHandle_0
+    ,  0);
     
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     hrMax30102
     ,  "hrMax30102"   // A name just for humans
     ,  3000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  2 // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  &TaskHandle_1); 
+    ,  &TaskHandle_1
+    ,  0); 
   
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     spo2Max30102
     ,  "spo2Max30102"   // A name just for humans
     ,  4000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  &TaskHandle_2); 
+    ,  &TaskHandle_2
+    ,  0); 
 
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     tempMlx90614
     ,  "tempMlx90614"   // A name just for humans
     ,  4000  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  0  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  &TaskHandle_3); 
+    ,  &TaskHandle_3
+    ,  0);
 
 }
 
 // ********************************************* Loop function ******************************************************************
 // ******************************************************************************************************************************
 void loop()
-{ }
+{ 
+  btn.tick(); //loop function runs on cpu core 1 by default 
+  if ( checkFlag == false ){
+    // loop() is also the one of FreeRTOS Tasks, so delete own after running task1.
+    vTaskDelete(NULL); 
+  }
+}
 
 //************************OLED Display Functions*********************************
 //*****************************************************************************
@@ -1326,8 +1361,13 @@ void displayNotice() {
     display.clearDisplay();
     delay(2000);
   } else {
+    display.setTextSize(2);
+    display.setCursor(8,0);
+    display.print(F("ID :"));
+    display.setCursor(64,0);
+    display.print(user_id);
     display.setTextSize(1);
-    display.setCursor(8,16);
+    display.setCursor(8,32);
     display.print(F("Put Your Finger ON"));
     display.setTextSize(2);
     display.setCursor(8,48);
@@ -1431,6 +1471,7 @@ char const *strToChar2(String str) {
   return char_array2;
 }
 
+// ********************************Each task runs on CPU Core 0****************************************************
 // MAX30102:Checking Presence
 //*******************************************************************************************************
 void preCheck(void *pvParameters)
@@ -1438,13 +1479,13 @@ void preCheck(void *pvParameters)
   (void) pvParameters;
 
   xSemaphoreTake(xMutex, portMAX_DELAY);
+
+  currentTime = millis();
   
   for (;;) 
   {
-    // checking button state all the time
-    btn.tick();
-    // this is just for checking if we are connected to WiFi
-    //check_status();
+    // this is just for checking go into sleep mode
+    check_interval();
 
     displayNotice();
 
@@ -1744,6 +1785,9 @@ void tempMlx90614(void *pvParameters)
 
   data_publish();
   vTaskDelay(pdMS_TO_TICKS(200));
+
+  deleteOldInstances();
+  WiFi.mode(WIFI_OFF);
 
   ESP.restart();
 }

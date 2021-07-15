@@ -16,6 +16,8 @@
 
 ![esp32-hcd](images/esp32_hcd_test.jpeg)
 
+![esp32-hcd](images/hcd.jpg)
+
 ## Libraries(platformio.ini)
 
   + adafruit/Adafruit GFX Library@^1.10.10
@@ -27,6 +29,7 @@
 	+ mathertel/OneButton@0.0.0-alpha+sha.eb583d713a
 	+ khoih.prog/ESP_WifiManager@^1.7.2
 	+ adafruit/Adafruit SSD1306@^2.4.6
+  + adafruit/Adafruit NeoPixel@^1.8.2
 
 
 ## Important!
@@ -103,11 +106,11 @@ https://ficus-forum.myvnc.com/t/topic/409/16
 
 0. Keeping Switch on for a while and release it, ESP32 will be changed to AP Mode, enabled to access from your mobile or PC, then register SSID, Passowrd, MQTT Server and so on.
 
-  ![esp32-wifi-ap-config-menu](images/memu.png)
+  ![esp32-wifi-ap-config-menu](images/wifi_manager_top.jpg)
 
-  ![esp32-wifi-ap-config-info](images/info.png)
+  ![esp32-wifi-ap-config](wifi_manager_config.jpg)
 
-  ![esp32-wifi-ap-config](images/config.png)
+  Push button for changing user ID (Double click for the user ID reset:1 ). After 60 seconds without any actions, it will change to deep sleep mode.
 
 1. Put your finger upon MAX30102 and MLX90614 sensors position.
 
@@ -117,11 +120,16 @@ https://ficus-forum.myvnc.com/t/topic/409/16
 
 4. Finally, measuring your finger temperature, display the values(Actual Temp and Ambient) on OLED Display. If you want to mesure the only body temperature, release your finger at the above process 1 or 2.
 
-5. Published JSON format data like the below to MQTT Server.
+5. Published JSON format data with user ID like the below to MQTT Server.
 ```
-{"hr":66,"spo2":98,"temp":36.35}
-{"hr":64,"spo2":100,"temp":36.67}
-{"hr":67,"spo2":99,"temp":36.85}
+{"id1":{"hr":69,"spo2":100,"temp":35.81}}
+{"id2":{"hr":72,"spo2":99,"temp":35.89}}
+{"id3":{"hr":74,"spo2":97,"temp":35.85}}
+{"id4":{"hr":72,"spo2":99,"temp":35.91}}
+{"id5":{"hr":74,"spo2":98,"temp":36.05}}
+{"id6":{"hr":0,"spo2":0,"temp":35.75}}
+...
+...
 ```
 
 ## Cooperation with Home Automation System(how to cook data)
@@ -135,6 +143,9 @@ Example conditions for emergency call;
 
 Multi users of data having this device are monitored on my Home Assistant System.
 
+![hass-hcd-iphone](images/hass_hcd_iphone.png)
+
+![hass-hcd-ipad](images/hass_hcd_ipad.png)
 
 ## Notes
 If you are developing on Arduino IDE, change the file name `main.cpp` to `file_name_you_like.ini`.
