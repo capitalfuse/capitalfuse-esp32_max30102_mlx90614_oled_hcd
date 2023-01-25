@@ -54,11 +54,11 @@ WiFiMulti wifiMulti;
   // Use LittleFS
   #include "FS.h"
 
-  // The library has been merged into esp32 core release 1.0.6
-  #include <LITTLEFS.h>             // https://github.com/lorol/LITTLEFS
+  // Previous library "https://github.com/lorol/LITTLEFS" merged to the Arduino esp32 core v2
+  #include <LittleFS.h>             // https://github.com/espressif/arduino-esp32/tree/master/libraries/LittleFS
     
-  FS* filesystem =      &LITTLEFS;
-  #define FileFS        LITTLEFS
+  FS* filesystem =      &LittleFS;
+  #define FileFS        LittleFS
   #define FS_Name       "LittleFS"
   
 #elif USE_SPIFFS
